@@ -5,13 +5,13 @@ import requests
 import json
 
 
-# bucket_name = os.environ['BUCKET_NAME']
-# s3 = boto3.resource('s3')
+bucket_name = os.environ['BUCKET_NAME']
+s3 = boto3.resource('s3')
 
 def fetch_hacker_news(event, context):
     base_url = "http://hn.algolia.com/api/v1"
 
-    # bucket = s3.Bucket(bucket_name)
+    bucket = s3.Bucket(bucket_name)
 
     now = datetime.datetime.now(datetime.timezone.utc)
     today = now.date()
@@ -44,11 +44,11 @@ def fetch_hacker_news(event, context):
             if not hits:
                 break
 
-            # bucket.put_object(
-            #     Key=f"{prefix}/page_{page}.json",
-            #     Body=json.dumps(hits),
-            #     ContentType='application/json'
-            # )
+            bucket.put_object(
+                Key=f"{prefix}/page_{page}.json",
+                Body=json.dumps(hits),
+                ContentType='application/json'
+            )
 
             page += 1
 
