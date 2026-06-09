@@ -1,4 +1,5 @@
 from aws_cdk import (
+    Size,
     Stack,
     aws_lambda as _lambda,
     aws_iam as iam,
@@ -40,8 +41,9 @@ class TwitterUsersSilverStack(Stack):
             handler="twitter_users_extraction.handler",
             code=_lambda.Code.from_asset("lambdas/twitterUsersExtraction"),
             role=role,
-            timeout=Duration.minutes(10),
-            memory_size=1024,
+            timeout=Duration.minutes(15),
+            memory_size=3007,
+            ephemeral_storage_size=Size.gibibytes(10),
             environment={
                 "BUCKET_NAME": data_bucket.bucket_name,
             },
