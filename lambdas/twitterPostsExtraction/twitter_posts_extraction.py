@@ -12,6 +12,11 @@ def clean_html(text):
         return ""
     return re.sub(r'<[^>]+>', '', str(text))
 
+def map_post_type(row):
+        if row.get('is_retweet') == 'True':
+            return 'retweet'
+        return 'tweet'
+
 def handler(event, context):
     prefix = "bronze/twitter/"
     response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=prefix)
@@ -37,6 +42,7 @@ def handler(event, context):
                     "post_id": chunk["date"].astype(str) + "_" + chunk["user_name"], # Proxy ID
                     "author_username": chunk["user_name"],
                     "content_text": chunk["text"].apply(clean_html),
+                    "post_type": chunk.apply(map_post_type, axis=1),
                     "created_at": pd.to_datetime(chunk["date"], utc=True, errors="coerce")
                 })
                 
