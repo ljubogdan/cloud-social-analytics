@@ -15,6 +15,8 @@ def handler(event, context):
     if "Contents" not in response:
         return {"status": "No files to process"}
 
+    seen_users = set()
+
     for obj in response["Contents"]:
         key = obj["Key"]
         
@@ -29,7 +31,17 @@ def handler(event, context):
                 dataset=False
             )
 
+
             for chunk in reader:
+
+                chunk = chunk[
+                    ~chunk["user_name"].isin(seen_users)
+                ]
+
+                seen_users.update(chunk["user_name"])
+
+                if chunk.empty:
+                    continue
                 
                 created_at_series = pd.to_datetime(chunk["user_created"], errors="coerce", utc=True)
 
@@ -50,7 +62,7 @@ def handler(event, context):
                     continue
 
                 wr.s3.to_parquet(
-                    df=users_df.drop_duplicates(subset=["user_id"]),
+                    df=users_df,
                     path=f"s3://{BUCKET_NAME}/silver/users/",
                     dataset=True,
                     mode="append",
