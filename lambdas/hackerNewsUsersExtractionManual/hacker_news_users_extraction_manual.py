@@ -1,12 +1,29 @@
+from concurrent.futures import ThreadPoolExecutor
 import os
 import json
 import uuid
 import boto3
 import awswrangler as wr
 import pandas as pd
+import requests
 
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 s3 = boto3.client("s3")
+
+def get_karma(username):
+    try:
+        response = requests.get(
+            f"https://hacker-news.firebaseio.com/v0/user/{username}/karma.json",
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            return int(response.text)
+
+    except Exception:
+        pass
+
+    return None
 
 def make_user_id(username: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"HN:{username}"))
@@ -52,6 +69,11 @@ def handler(event, context):
 
     if not users:
         return {"status": "No users found"}
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        df["karma_score"] = list(
+            executor.map(get_karma, df["username"])
+        )
 
     df = pd.DataFrame(list(users.values()))
     df = df.dropna(subset=["created_at"])
