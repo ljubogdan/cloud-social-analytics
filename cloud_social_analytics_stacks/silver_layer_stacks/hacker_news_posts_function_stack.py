@@ -26,7 +26,7 @@ class HackerNewsPostsSilverStack(Stack):
             )
         )
 
-        data_bucket.grant_read(role, "bronze/hacker-news/*")
+        data_bucket.grant_read(role)
         data_bucket.grant_write(role, "silver/posts/*")
         data_bucket.grant_write(role, "silver/post_relations/*")
 
