@@ -70,15 +70,16 @@ def handler(event, context):
     if not users:
         return {"status": "No users found"}
 
-
     df = pd.DataFrame(list(users.values()))
     df = df.dropna(subset=["created_at"])
 
     with ThreadPoolExecutor(max_workers=20) as executor:
-        df["karma_score"] = list(
+        karma_list = list(
             executor.map(get_karma, df["username"])
         )
-        
+
+    df["karma_score"] = pd.Series(karma_list, dtype="Int64")
+
     wr.s3.to_parquet(
         df=df,
         path=f"s3://{BUCKET_NAME}/silver/users/",
