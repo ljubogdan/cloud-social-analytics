@@ -76,23 +76,28 @@ def handler(event, context):
     df = pd.DataFrame(list(users.values()))
     df = df.dropna(subset=["created_at"])
 
-    existing = wr.s3.read_parquet(
-        path=f"s3://{BUCKET_NAME}/silver/users/platform=HackerNews/"
-    )
+    try:
+        existing = wr.s3.read_parquet(
+            path=f"s3://{BUCKET_NAME}/silver/users/platform=HackerNews/"
+        )
 
-    existing_usernames = set(existing["username"])
-
-    df = df[
-        ~df["username"].isin(existing_usernames)
-    ]
-
+        existing_usernames = set(existing["username"])
+        
+        df = df[
+            ~df["username"].isin(existing_usernames)
+        ]
+    except:
+        pass
+    
     if df.empty:
         return {"status": "No new users to process"}
 
     with ThreadPoolExecutor(max_workers=20) as executor:
-        df["karma_score"] = list(
+        karma_list = list(
             executor.map(get_karma, df["username"])
         )
+
+    df["karma_score"] = pd.Series(karma_list, dtype="Int64")
 
     wr.s3.to_parquet(
         df=df,
