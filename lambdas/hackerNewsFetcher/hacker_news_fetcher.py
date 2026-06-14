@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 bucket_name = os.environ['BUCKET_NAME']
 s3 = boto3.resource('s3')
-
+events_client = boto3.client("events")
 
 def split_day(start_dt, parts=48):
     step = datetime.timedelta(minutes=30)
@@ -67,6 +67,28 @@ def fetch_hacker_news(event, context):
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(worker, jobs)
+
+    prefix = (
+        f"bronze/hacker-news/"
+        f"year={yesterday.year}/"
+        f"month={yesterday.month:02d}/"
+        f"day={yesterday.day:02d}/"
+    )
+
+    events_client.put_events(
+        Entries=[
+            {
+                "Source": "socialanalytics.hackernews",
+                "DetailType": "HackerNewsIngestionCompleted",
+                "Detail": json.dumps({
+                    "prefix": prefix,
+                    "year": yesterday.year,
+                    "month": yesterday.month,
+                    "day": yesterday.day
+                })
+            }
+        ]
+    )
 
     return {
         "statusCode": 200,
