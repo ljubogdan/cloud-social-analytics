@@ -30,6 +30,13 @@ class HackerNewsFetcherFunctionStack(Stack):
         )
         data_bucket.grant_read_write(lambda_role)
 
+        lambda_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["events:PutEvents"],
+                resources=["*"]
+            )
+        )
+
         hacker_news_function = _lambda.Function(
             self,
             "HackerNewsFetcher",
@@ -54,7 +61,7 @@ class HackerNewsFetcherFunctionStack(Stack):
         events.Rule(
             self,
             "HackerNewsSchedule",
-            schedule=events.Schedule.cron(hour="12", minute="0"),
+            schedule=events.Schedule.cron(hour="9", minute="0"),
             targets=[targets.LambdaFunction(hacker_news_function)],
         )
 
