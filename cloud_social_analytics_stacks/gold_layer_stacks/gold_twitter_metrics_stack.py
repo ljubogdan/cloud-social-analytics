@@ -3,6 +3,8 @@ from aws_cdk import (
     Duration,
     aws_lambda as _lambda,
     aws_iam as iam,
+    aws_events as events,
+    aws_events_targets as targets,
 )
 from constructs import Construct
 
@@ -50,4 +52,11 @@ class GoldTwitterMetricsStack(Stack):
 
         fn.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.AWS_IAM,
+        )
+
+        events.Rule(
+            self,
+            "GoldTwitterMetricsSchedule",
+            schedule=events.Schedule.cron(hour="10", minute="30"),
+            targets=[targets.LambdaFunction(fn)],
         )
