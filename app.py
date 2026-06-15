@@ -9,6 +9,8 @@ from cloud_social_analytics_stacks.silver_layer_stacks.hacker_news_users_functio
 from cloud_social_analytics_stacks.silver_layer_stacks.hacker_news_users_manual_function_stack import HackerNewsUsersManualSilverStack
 from cloud_social_analytics_stacks.silver_layer_stacks.twitter_posts_function_stack import TwitterPostsSilverStack
 from cloud_social_analytics_stacks.silver_layer_stacks.twitters_users_function_stack import TwitterUsersSilverStack
+from cloud_social_analytics_stacks.gold_layer_stacks.gold_hn_metrics_stack import GoldHnMetricsStack
+from cloud_social_analytics_stacks.gold_layer_stacks.gold_twitter_metrics_stack import GoldTwitterMetricsStack
 
 app = App()
 
@@ -72,5 +74,18 @@ hacker_news_posts_silver_stack = HackerNewsPostsSilverStack(
     env = env
 )
 
+gold_hn_metrics_stack = GoldHnMetricsStack(
+    app,
+    "SocialAnalyticsGoldHnMetricsStack",
+    data_stack.data_lake,
+    env = env
+)
+
+gold_twitter_metrics_stack = GoldTwitterMetricsStack(
+    app,
+    "SocialAnalyticsGoldTwitterMetricsStack",
+    data_stack.data_lake,
+    env = env
+)
 
 app.synth()
