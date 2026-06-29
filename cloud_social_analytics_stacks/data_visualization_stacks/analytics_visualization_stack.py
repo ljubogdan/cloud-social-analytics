@@ -21,7 +21,7 @@ class AnalyticsVisualizationStack(Stack):
         role.add_managed_policy(iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore"))
 
         instance = ec2.Instance(self, "PostgresInstance",
-            instance_type=ec2.InstanceType("t3.small"),
+            instance_type=ec2.InstanceType("t3.medium"),
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             vpc=vpc,
             security_group=ec2_sg,
