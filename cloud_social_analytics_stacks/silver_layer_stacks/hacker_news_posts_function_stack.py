@@ -36,7 +36,7 @@ class HackerNewsPostsSilverStack(Stack):
             "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:1"
         )
 
-        fn = _lambda.Function(
+        self.fn = _lambda.Function(
             self,
             "HackerNewsPostsSilverLambda",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -60,6 +60,6 @@ class HackerNewsPostsSilverStack(Stack):
                 detail_type=["HackerNewsIngestionCompleted"]
             ),
             targets=[
-                targets.LambdaFunction(fn)
+                targets.LambdaFunction(self.fn)
             ]
         )

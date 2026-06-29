@@ -29,7 +29,7 @@ class TwitterFetcherFunctionStack(Stack):
         )
         data_bucket.grant_read_write(lambda_role)
 
-        twitter_function = _lambda.Function(
+        self.twitter_function = _lambda.Function(
             self,
             "TwitterFetcher",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -51,7 +51,7 @@ class TwitterFetcherFunctionStack(Stack):
             },
         )
         
-        tw_url = twitter_function.add_function_url(
+        tw_url = self.twitter_function.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.AWS_IAM,
             cors=_lambda.FunctionUrlCorsOptions(
                 allowed_origins=["*"]
