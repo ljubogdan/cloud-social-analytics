@@ -34,7 +34,7 @@ class HackerNewsPostsManualSilverStack(Stack):
             "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:1"
         )
 
-        fn = _lambda.Function(
+        self.fn = _lambda.Function(
             self,
             "HackerNewsPostsManualSilverLambda",
             runtime=_lambda.Runtime.PYTHON_3_12,
