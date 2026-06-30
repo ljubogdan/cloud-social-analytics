@@ -17,7 +17,7 @@ def write_gold(df, path, partition_cols):
         partition_cols=partition_cols
     )
 
-def compute_dq_chunked(path, filters=None, max_rows=50000):
+def compute_dq_chunked(path, max_rows=50000):
     total_rows = 0
     total_cells = 0
     non_null_cells = 0
@@ -25,8 +25,7 @@ def compute_dq_chunked(path, filters=None, max_rows=50000):
         chunks = wr.s3.read_parquet(
             path=path,
             dataset=True,
-            chunked=True,
-            filters=filters
+            chunked=True
         )
         for chunk in chunks:
             rows, cols = chunk.shape
@@ -47,10 +46,12 @@ def handler(event, context):
         chunks = wr.s3.read_parquet(
             path=f"s3://{BUCKET_NAME}/silver/users/platform=X/",
             dataset=True,
-            chunked=True,
-            columns=["username", "created_at", "followers_count"]
+            chunked=True
         )
+        chunk_count = 0
         for chunk in chunks:
+            chunk_count += 1
+            print(f"[twitter] chunk {chunk_count}, cols={list(chunk.columns)}, rows={len(chunk)}")
             chunk["date"] = chunk["created_at"].dt.date.astype(str)
             for dv, cnt in chunk["date"].value_counts().items():
                 daily_counts[dv] = daily_counts.get(dv, 0) + cnt
@@ -58,17 +59,20 @@ def handler(event, context):
                 f = chunk[chunk["followers_count"].notna()]
                 if not f.empty:
                     top_candidates.append(f[["username", "followers_count"]].nlargest(10, "followers_count"))
-    except Exception:
-        pass
+        print(f"[twitter] total chunks={chunk_count}, top_candidates={len(top_candidates)}")
+    except Exception as e:
+        print(f"[twitter] ERROR: {e}")
 
     if daily_counts:
         du = pd.DataFrame(list(daily_counts.items()), columns=["date", "new_users"]).sort_values("date")
         du["total_users"] = du["new_users"].cumsum()
         du["platform"] = "X"
-        write_gold(du, f"s3://{BUCKET_NAME}/gold/daily_users_metric/", ["platform", "date"])
+        du["year"] = du["date"].str[:4]
+        du["month"] = du["date"].str[5:7]
+        write_gold(du, f"s3://{BUCKET_NAME}/gold/daily_users_metric/", ["platform", "year", "month"])
 
     if top_candidates:
-        tf = pd.concat(top_candidates, ignore_index=True).nlargest(10, "followers_count").reset_index(drop=True)
+        tf = pd.concat(top_candidates, ignore_index=True).drop_duplicates(subset=["username"]).nlargest(10, "followers_count").reset_index(drop=True)
         tf["rank"] = tf.index + 1
         tf["snapshot_date"] = TODAY
         write_gold(tf, f"s3://{BUCKET_NAME}/gold/top_twitter_users_by_followers/", ["snapshot_date"])
@@ -84,7 +88,7 @@ def handler(event, context):
 
     rows = []
     for tn, (p, f) in tables.items():
-        tr, ds = compute_dq_chunked(p, filters=f)
+        tr, ds = compute_dq_chunked(p)
         rows.append({"table_name": tn, "total_rows": tr, "non_null_pct": ds, "snapshot_date": TODAY})
 
     write_gold(pd.DataFrame(rows), f"s3://{BUCKET_NAME}/gold/data_quality_score/", ["snapshot_date"])

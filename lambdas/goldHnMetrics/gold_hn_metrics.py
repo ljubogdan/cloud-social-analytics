@@ -24,34 +24,70 @@ def write_gold(df, path, partition_cols):
         partition_cols=partition_cols
     )
 
-def top_n_largest_chunked(path, row_filter, sort_col, n, select_cols, filters=None):
+def top_n_recent_chunked(path, row_filter, n, select_cols):
+    try:
+        chunks = wr.s3.read_parquet(path=path, dataset=True, chunked=True)
+    except Exception as e:
+        print(f"[top_n_recent_chunked] error: {e}")
+        return pd.DataFrame()
+    candidates = []
+    for chunk in chunks:
+        if "post_id" not in chunk.columns:
+            continue
+        for col, val in row_filter.items():
+            if col in chunk.columns:
+                chunk = chunk[chunk[col] == val]
+        if chunk.empty:
+            continue
+        available_cols = [c for c in select_cols if c in chunk.columns]
+        c = chunk[available_cols].copy()
+        c["_id_int"] = pd.to_numeric(c["post_id"], errors="coerce")
+        candidates.append(c.nlargest(n, "_id_int"))
+    if not candidates:
+        return pd.DataFrame()
+    result = pd.concat(candidates, ignore_index=True)
+    result["_id_int"] = pd.to_numeric(result["post_id"], errors="coerce")
+    result = result.nlargest(n, "_id_int").drop(columns=["_id_int"]).reset_index(drop=True)
+    result["rank"] = result.index + 1
+    return result
+
+def top_n_largest_chunked(path, row_filter, sort_col, n, select_cols):
     try:
         chunks = wr.s3.read_parquet(
-            path=path, 
-            dataset=True, 
-            chunked=True, 
-            filters=filters
+            path=path,
+            dataset=True,
+            chunked=True
         )
-    except Exception:
+    except Exception as e:
+        print(f"[top_n_largest_chunked] read_parquet error: {e}")
         return pd.DataFrame()
 
     candidates = []
+    chunk_count = 0
     for chunk in chunks:
+        chunk_count += 1
+        print(f"[chunk {chunk_count}] cols={list(chunk.columns)}, rows={len(chunk)}")
         if sort_col not in chunk.columns:
+            print(f"[chunk {chunk_count}] SKIP - no {sort_col} column")
             continue
         for col, val in row_filter.items():
             if col in chunk.columns:
                 chunk = chunk[chunk[col] == val]
         chunk = chunk[chunk[sort_col].notna()]
+        print(f"[chunk {chunk_count}] after filter: {len(chunk)} rows")
         if chunk.empty:
             continue
         available_cols = [c for c in select_cols if c in chunk.columns]
         candidates.append(chunk[available_cols].nlargest(n, sort_col))
 
+    print(f"[top_n_largest_chunked] total chunks={chunk_count}, candidates={len(candidates)}")
     if not candidates:
         return pd.DataFrame()
 
-    result = pd.concat(candidates, ignore_index=True).nlargest(n, sort_col).reset_index(drop=True)
+    result = pd.concat(candidates, ignore_index=True)
+    if "post_id" in result.columns:
+        result = result.drop_duplicates(subset=["post_id"])
+    result = result.nlargest(n, sort_col).reset_index(drop=True)
     result["rank"] = result.index + 1
     return result
 
@@ -98,7 +134,9 @@ def handler(event, context):
         )
         daily_hn_users["total_users"] = daily_hn_users["new_users"].cumsum()
         daily_hn_users["platform"] = "HackerNews"
-        write_gold(daily_hn_users, f"s3://{BUCKET_NAME}/gold/daily_users_metric/", ["platform", "date"])
+        daily_hn_users["year"] = daily_hn_users["date"].str[:4]
+        daily_hn_users["month"] = daily_hn_users["date"].str[5:7]
+        write_gold(daily_hn_users, f"s3://{BUCKET_NAME}/gold/daily_users_metric/", ["platform", "year", "month"])
 
     if not hn_users.empty:
         top_high = (
@@ -120,13 +158,11 @@ def handler(event, context):
         bottom_karma["snapshot_date"] = snapshot_date
         write_gold(bottom_karma, f"s3://{BUCKET_NAME}/gold/top_hn_users_low_karma/", ["snapshot_date"])
 
-    top_jobs = top_n_largest_chunked(
+    top_jobs = top_n_recent_chunked(
         path=f"s3://{BUCKET_NAME}/silver/posts/",
         row_filter={"post_type": "job"},
-        sort_col="score",
         n=10,
-        select_cols=["post_id", "author_username", "content_text", "score"],
-        filters=[("year", "==", y)]
+        select_cols=["post_id", "author_username", "content_text", "score"]
     )
     if not top_jobs.empty:
         top_jobs["snapshot_date"] = snapshot_date
@@ -137,8 +173,7 @@ def handler(event, context):
         row_filter={"post_type": "story"},
         sort_col="score",
         n=10,
-        select_cols=["post_id", "author_username", "content_text", "score"],
-        filters=[("year", "==", y)]
+        select_cols=["post_id", "author_username", "content_text", "score"]
     )
     if not top_stories.empty:
         top_stories["snapshot_date"] = snapshot_date
