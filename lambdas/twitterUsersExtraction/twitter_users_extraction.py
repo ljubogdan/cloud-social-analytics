@@ -26,7 +26,7 @@ def handler(event, context):
             s3_path = f"s3://{BUCKET_NAME}/{key}"
             reader = wr.s3.read_csv(
                 path=s3_path,
-                usecols=["user_name", "user_verified", "user_created"],
+                usecols=["user_name", "user_verified", "user_created", "user_followers"],
                 chunksize=100000,
                 dataset=False
             )
@@ -53,6 +53,7 @@ def handler(event, context):
                     "platform": "X",
                     "karma_score": None,
                     "is_verified": chunk["user_verified"].astype(bool),
+                    "followers_count": pd.to_numeric(chunk["user_followers"], errors="coerce").astype("Int64"),
                     "created_at": created_at_series
                 })
                 
