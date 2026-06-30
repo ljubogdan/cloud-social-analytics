@@ -90,7 +90,6 @@ hacker_news_posts_silver_stack = HackerNewsPostsSilverStack(
 )
 lambdas.append(hacker_news_posts_silver_stack.fn)
 
-NotifierStack(app, "NotifierStack", lambdas=lambdas, env=env)
 
 gold_hn_metrics_stack = GoldHnMetricsStack(
     app,
@@ -98,6 +97,7 @@ gold_hn_metrics_stack = GoldHnMetricsStack(
     data_stack.data_lake,
     env = env
 )
+lambdas.append(gold_hn_metrics_stack.fn)
 
 gold_twitter_metrics_stack = GoldTwitterMetricsStack(
     app,
@@ -105,5 +105,8 @@ gold_twitter_metrics_stack = GoldTwitterMetricsStack(
     data_stack.data_lake,
     env = env
 )
+lambdas.append(gold_twitter_metrics_stack.fn)
+
+notifier_stack = NotifierStack(app, "NotifierStack", lambdas=lambdas, env=env)
 
 app.synth()
