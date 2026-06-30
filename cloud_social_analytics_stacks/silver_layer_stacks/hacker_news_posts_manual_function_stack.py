@@ -1,7 +1,7 @@
 from aws_cdk import (
     Stack,
     Duration,
-    Size,
+    CfnOutput,
     aws_lambda as _lambda,
     aws_iam as iam,
 )
@@ -43,9 +43,15 @@ class HackerNewsPostsManualSilverStack(Stack):
             role=role,
             timeout=Duration.minutes(15),
             memory_size=3007,
-            ephemeral_storage_size=Size.gibibytes(10),
             environment={
                 "BUCKET_NAME": data_bucket.bucket_name,
             },
             layers=[wrangler_layer],
+        )
+
+        CfnOutput(
+            self,
+            "ExportsOutputRefHackerNewsPostsManualSilverLambdaB7FF446C50BEDA80",
+            value=fn.function_name,
+            export_name="SocialAnalyticsHackerNewsPostsManualSilverStack:ExportsOutputRefHackerNewsPostsManualSilverLambdaB7FF446C50BEDA80"
         )

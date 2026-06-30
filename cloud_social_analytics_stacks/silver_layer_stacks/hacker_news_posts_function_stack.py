@@ -1,12 +1,12 @@
 from aws_cdk import (
-        Stack,
-        Duration,
-        Size,
-        aws_lambda as _lambda,
-        aws_iam as iam,
-        aws_events as events,
-        aws_events_targets as targets,
-    )
+    Stack,
+    Duration,
+    CfnOutput,
+    aws_lambda as _lambda,
+    aws_iam as iam,
+    aws_events as events,
+    aws_events_targets as targets,
+)
 from constructs import Construct
 
 class HackerNewsPostsSilverStack(Stack):
@@ -45,11 +45,17 @@ class HackerNewsPostsSilverStack(Stack):
             role=role,
             timeout=Duration.minutes(15),
             memory_size=3007,
-            ephemeral_storage_size=Size.gibibytes(10),
             environment={
                 "BUCKET_NAME": data_bucket.bucket_name,
             },
             layers=[wrangler_layer],
+        )
+
+        CfnOutput(
+            self,
+            "ExportsOutputRefHackerNewsPostsSilverLambda2E4B65AFD7CB7775",
+            value=fn.function_name,
+            export_name="SocialAnalyticsHackerNewsPostsSilverStack:ExportsOutputRefHackerNewsPostsSilverLambda2E4B65AFD7CB7775"
         )
 
         events.Rule(
