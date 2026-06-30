@@ -35,7 +35,7 @@ class GoldHnMetricsStack(Stack):
             "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:1"
         )
 
-        self.fn = _lambda.Function(
+        fn = _lambda.Function(
             self,
             "GoldHnMetricsLambda",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -50,7 +50,7 @@ class GoldHnMetricsStack(Stack):
             layers=[wrangler_layer],
         )
 
-        self.fn.add_function_url(
+        fn.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.AWS_IAM,
         )
 
@@ -58,5 +58,5 @@ class GoldHnMetricsStack(Stack):
             self,
             "GoldHnMetricsSchedule",
             schedule=events.Schedule.cron(hour="10", minute="0"),
-            targets=[targets.LambdaFunction(self.fn)],
+            targets=[targets.LambdaFunction(fn)],
         )
