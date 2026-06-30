@@ -1,10 +1,9 @@
 from aws_cdk import (
-    Size,
     Stack,
+    CfnOutput,
     aws_lambda as _lambda,
     aws_iam as iam,
     Duration,
-    BundlingOptions,
 )
 from constructs import Construct
 
@@ -43,9 +42,17 @@ class TwitterUsersSilverStack(Stack):
             role=role,
             timeout=Duration.minutes(15),
             memory_size=3007,
-            ephemeral_storage_size=Size.gibibytes(10),
             environment={
                 "BUCKET_NAME": data_bucket.bucket_name,
             },
             layers=[wrangler_layer],
+        )
+
+        self.twitter_users_fn = fn
+
+        CfnOutput(
+            self,
+            "ExportsOutputRefTwitterUsersSilverLambda74C24C6531CE18B3",
+            value=fn.function_name,
+            export_name="SocialAnalyticsTwitterUsersSilverStack:ExportsOutputRefTwitterUsersSilverLambda74C24C6531CE18B3"
         )

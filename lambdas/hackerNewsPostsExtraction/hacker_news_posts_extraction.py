@@ -75,7 +75,8 @@ def handler(event, context):
                 "author_username": author,
                 "content_text": content,
                 "post_type": detect_post_type(item),
-                "created_at": created_at
+                "created_at": created_at,
+                "score": item.get("points")
             })
 
             children = item.get("children") or item.get("kids") or []
