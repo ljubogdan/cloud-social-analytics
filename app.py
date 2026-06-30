@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-from aws_cdk import App, Environment
+from aws_cdk import App, Environment, Aspects
 from cloud_social_analytics_stacks.bronze_layer_stacks.data_stack.data_stack import DataStack
 from cloud_social_analytics_stacks.bronze_layer_stacks.function_stacks.twitter_fetcher_function_stack import TwitterFetcherFunctionStack
 from cloud_social_analytics_stacks.bronze_layer_stacks.function_stacks.hacker_news_fetcher_function_stack import HackerNewsFetcherFunctionStack
+from cloud_social_analytics_stacks.notifier_stack import NotifierStack
 from cloud_social_analytics_stacks.silver_layer_stacks.hacker_news_posts_function_stack import HackerNewsPostsSilverStack
 from cloud_social_analytics_stacks.silver_layer_stacks.hacker_news_posts_manual_function_stack import HackerNewsPostsManualSilverStack
 from cloud_social_analytics_stacks.silver_layer_stacks.hacker_news_users_function_stack import HackerNewsUsersSilverStack
@@ -11,6 +12,12 @@ from cloud_social_analytics_stacks.silver_layer_stacks.twitter_posts_function_st
 from cloud_social_analytics_stacks.silver_layer_stacks.twitters_users_function_stack import TwitterUsersSilverStack
 from cloud_social_analytics_stacks.gold_layer_stacks.gold_hn_metrics_stack import GoldHnMetricsStack
 from cloud_social_analytics_stacks.gold_layer_stacks.gold_twitter_metrics_stack import GoldTwitterMetricsStack
+from aspects.lambda_alarm_aspect import LambdaAlarmAspect
+
+
+from dotenv import load_dotenv
+load_dotenv()
+
 
 app = App()
 
@@ -86,6 +93,15 @@ gold_twitter_metrics_stack = GoldTwitterMetricsStack(
     "SocialAnalyticsGoldTwitterMetricsStack",
     data_stack.data_lake,
     env = env
+)
+
+notifier_stack = NotifierStack(app, "NotifierStack", env=env)
+
+Aspects.of(app).add(
+    LambdaAlarmAspect(
+        notifier_stack.alarm_topic,
+        exclude_ids={"DiscordNotifier"},
+    )
 )
 
 app.synth()
