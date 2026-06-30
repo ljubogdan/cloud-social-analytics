@@ -28,7 +28,7 @@ class TwitterPostsSilverStack(Stack):
             "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:1"
         )
 
-        self.fn = _lambda.Function(
+        fn = _lambda.Function(
             self,
             "TwitterPostsSilverLambda",
             runtime=_lambda.Runtime.PYTHON_3_12,

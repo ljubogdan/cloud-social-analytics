@@ -37,7 +37,7 @@ class HackerNewsFetcherFunctionStack(Stack):
             )
         )
 
-        self.hacker_news_function = _lambda.Function(
+        hacker_news_function = _lambda.Function(
             self,
             "HackerNewsFetcher",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -62,10 +62,10 @@ class HackerNewsFetcherFunctionStack(Stack):
             self,
             "HackerNewsSchedule",
             schedule=events.Schedule.cron(hour="9", minute="0"),
-            targets=[targets.LambdaFunction(self.hacker_news_function)],
+            targets=[targets.LambdaFunction(hacker_news_function)],
         )
 
-        hn_url = self.hacker_news_function.add_function_url(
+        hn_url = hacker_news_function.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.AWS_IAM,
             cors=_lambda.FunctionUrlCorsOptions(
                 allowed_origins=["*"]
