@@ -96,6 +96,7 @@ gold_twitter_metrics_stack = GoldTwitterMetricsStack(
 data_visualization_stack = AnalyticsVisualizationStack(
     app,
     "SocialAnalyticsDataVisualizationStack",
+    data_stack.data_lake,
     env = env
 )
 

@@ -3,14 +3,15 @@ from aws_cdk import (
     aws_ec2 as ec2,
     aws_iam as iam,
     aws_lambda as _lambda,
-    Duration
+    Duration,
+    aws_s3 as s3
 )
 from constructs import Construct
 
 
 class AnalyticsVisualizationStack(Stack):
 
-    def __init__(self, scope: Construct, id: str, **kwargs):
+    def __init__(self, scope: Construct, id: str, data_lake: s3.IBucket, **kwargs):
         super().__init__(scope, id, **kwargs)
 
         vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
@@ -38,10 +39,7 @@ class AnalyticsVisualizationStack(Stack):
             )
         )
 
-        role.add_to_policy(iam.PolicyStatement(
-            actions=["s3:ListBucket", "s3:GetObject"],
-            resources=["*"]
-        ))
+        data_lake.grant_read(role)
 
         role.add_to_policy(iam.PolicyStatement(
             actions=["ec2:DescribeInstances"],
@@ -53,30 +51,6 @@ class AnalyticsVisualizationStack(Stack):
             "AnalyticsDbLayer",
             code=_lambda.Code.from_asset("layers/analytics-db"),
             compatible_runtimes=[_lambda.Runtime.PYTHON_3_11]
-        )
-
-        _lambda.Function(
-            self,
-            "GoldToPostgresLambda",
-            runtime=_lambda.Runtime.PYTHON_3_11,
-            handler="lambda_incremental_handler.lambda_handler",
-            code=_lambda.Code.from_asset("lambdas/analyticsVisualization"),
-            layers=[
-                db_layer,
-                _lambda.LayerVersion.from_layer_version_arn(
-                    self,
-                    "AwsSdkPandasLayer",
-                    "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python311:21"
-                )
-            ],
-            timeout=Duration.minutes(10),
-            memory_size=1024,
-            role=role,
-            environment={
-                "S3_BUCKET": "your-bucket",
-                "S3_PREFIX": "gold/",
-                "PG_CONN": "postgresql+pg8000://admin:admin123@<EC2_PUBLIC_IP>:5432/analytics"
-            }
         )
 
         user_data = ec2.UserData.for_linux()
@@ -104,7 +78,7 @@ class AnalyticsVisualizationStack(Stack):
             "docker exec superset superset init"
         )
 
-        ec2.Instance(
+        instance = ec2.Instance(
             self,
             "AnalyticsInstance",
             vpc=vpc,
@@ -115,4 +89,28 @@ class AnalyticsVisualizationStack(Stack):
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             security_group=sg,
             user_data=user_data,
+        )
+
+        _lambda.Function(
+            self,
+            "GoldToPostgresLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="lambda_incremental_handler.lambda_handler",
+            code=_lambda.Code.from_asset("lambdas/analyticsVisualization"),
+            layers=[
+                db_layer,
+                _lambda.LayerVersion.from_layer_version_arn(
+                    self,
+                    "AwsSdkPandasLayer",
+                    "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python311:21"
+                )
+            ],
+            timeout=Duration.minutes(10),
+            memory_size=1024,
+            role=role,
+            environment={
+                "S3_BUCKET": data_lake.bucket_name,
+                "S3_PREFIX": "gold/",
+                "PG_CONN": f"postgresql+pg8000://admin:admin123@{instance.instance_public_ip}:5432/analytics"
+            }
         )
