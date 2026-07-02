@@ -5,7 +5,7 @@ import os
 import logging
 import re
 from collections import defaultdict
-from sqlalchemy import create_engine, MetaData, Table, Column
+from sqlalchemy import create_engine, MetaData, Table, Column, inspect, text
 from sqlalchemy.types import String, Integer, Float, DateTime, Boolean
 
 logger = logging.getLogger()
@@ -54,20 +54,74 @@ def get_latest_per_metric(files):
     return latest
 
 
+def parse_hive_partitions(key):
+    """Extracts Hive-style partition=value pairs from an S3 key path,
+    e.g. 'gold/daily_users_metric/platform=X/year=2023/month=02/f.parquet'
+    -> {'platform': 'X', 'year': '2023', 'month': '02'}.
+    awswrangler writes partition values into the folder structure only,
+    not into the parquet file itself, so we have to recover them here."""
+    partitions = {}
+    for part in key.split("/"):
+        if "=" in part:
+            col, _, val = part.partition("=")
+            if col:
+                partitions[col] = val
+    return partitions
+
+
 def read_parquet(key):
     logger.info(f"Reading parquet: {key}")
 
     obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
-    return pd.read_parquet(io.BytesIO(obj["Body"].read()))
+    df = pd.read_parquet(io.BytesIO(obj["Body"].read()))
+
+    partitions = parse_hive_partitions(key)
+    for col, val in partitions.items():
+        if col not in df.columns:
+            df[col] = val
+            logger.info(f"Restored partition column '{col}'={val} from S3 path")
+
+    return df
 
 
+# Fallback single-column keys, used only if a metric has no entry in
+# COMPOSITE_PK_OVERRIDES below.
 POSSIBLE_KEYS = ["id", "post_id", "user_id", "username"]
 
+# Metrics whose gold data needs a multi-column key, either because there's
+# no natural single-column key (daily_* / data_quality_score), or because
+# a single column would collapse the daily history into one row per
+# user/post (top_* tables — these keep one row per snapshot_date).
+COMPOSITE_PK_OVERRIDES = {
+    "daily_hn_posts_metric": ["date", "post_type"],
+    "daily_users_metric": ["platform", "date"],
+    "data_quality_score": ["snapshot_date", "table_name"],
+    "top_hn_users_high_karma": ["snapshot_date", "username"],
+    "top_hn_users_low_karma": ["snapshot_date", "username"],
+    "top_hn_jobs_by_score": ["snapshot_date", "post_id"],
+    "top_hn_posts_by_score": ["snapshot_date", "post_id"],
+    "top_twitter_users_by_followers": ["snapshot_date", "username"],
+}
 
-def detect_pk(df):
+
+def detect_pk(df, table_name):
+    """Returns the primary key as a list of column names, or None if one
+    can't be determined."""
+    if table_name in COMPOSITE_PK_OVERRIDES:
+        candidate = COMPOSITE_PK_OVERRIDES[table_name]
+        missing = [c for c in candidate if c not in df.columns]
+        if missing:
+            logger.error(
+                f"Composite PK override for {table_name} references "
+                f"missing columns {missing}; columns present: {list(df.columns)}"
+            )
+            return None
+        return candidate
+
     for k in POSSIBLE_KEYS:
         if k in df.columns:
-            return k
+            return [k]
+
     return None
 
 
@@ -97,22 +151,53 @@ def sanitize_table_name(name):
     return re.sub(r"[^a-zA-Z0-9_]", "_", name)
 
 
+def quote_ident(name):
+    """Double-quote a Postgres identifier to protect against reserved
+    words (e.g. 'date', 'rank') and mixed case."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def get_existing_pk_columns(engine, table_name):
+    """Returns the list of PK columns for an existing table, or None if
+    the table doesn't exist."""
+    inspector = inspect(engine)
+    if not inspector.has_table(table_name):
+        return None
+    pk_constraint = inspector.get_pk_constraint(table_name)
+    return pk_constraint.get("constrained_columns") or []
+
+
+def ensure_correct_schema(engine, table_name, pk):
+    """If the table already exists with a different PK than the one we
+    need (e.g. leftover from before this fix, or before top_* tables got
+    composite keys), drop it so it can be recreated with the right PK.
+    Safe here because gold data in S3 is the source of truth and will be
+    fully re-upserted right after."""
+    existing_pk = get_existing_pk_columns(engine, table_name)
+    if existing_pk is None:
+        return  # table doesn't exist yet, nothing to do
+
+    if sorted(existing_pk) != sorted(pk):
+        logger.warning(
+            f"Table {table_name} exists with PK {existing_pk}, "
+            f"expected {pk}. Dropping and recreating table."
+        )
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE {quote_ident(table_name)}"))
+
+
 def create_table_if_not_exists(engine, table_name, df, pk):
     metadata = MetaData()
 
     columns = []
     for col in df.columns:
         col_type = infer_sql_type(df[col])
-
-        if col == pk:
-            columns.append(Column(col, col_type, primary_key=True))
-        else:
-            columns.append(Column(col, col_type))
+        columns.append(Column(col, col_type, primary_key=(col in pk)))
 
     table = Table(table_name, metadata, *columns)
     metadata.create_all(engine)
 
-    logger.info(f"Table ensured: {table_name}")
+    logger.info(f"Table ensured: {table_name} (pk={pk})")
     return table
 
 
@@ -120,11 +205,15 @@ def batch_upsert(engine, df, table_name, pk):
     logger.info(f"Upserting {len(df)} rows into {table_name}")
 
     cols = list(df.columns)
-    update_cols = [c for c in cols if c != pk]
+    update_cols = [c for c in cols if c not in pk]
 
     rows = [tuple(x) for x in df.to_numpy()]
 
     chunk_size = 1000
+
+    quoted_table = quote_ident(table_name)
+    quoted_cols = [quote_ident(c) for c in cols]
+    quoted_pk = [quote_ident(c) for c in pk]
 
     with engine.begin() as conn:
         for i in range(0, len(rows), chunk_size):
@@ -132,12 +221,14 @@ def batch_upsert(engine, df, table_name, pk):
 
             update_clause = ""
             if update_cols:
-                update_clause = ",".join([f"{c}=EXCLUDED.{c}" for c in update_cols])
+                update_clause = ",".join(
+                    [f"{quote_ident(c)}=EXCLUDED.{quote_ident(c)}" for c in update_cols]
+                )
 
             insert_sql = f"""
-                INSERT INTO {table_name} ({",".join(cols)})
+                INSERT INTO {quoted_table} ({",".join(quoted_cols)})
                 VALUES ({",".join(["%s"] * len(cols))})
-                ON CONFLICT ({pk})
+                ON CONFLICT ({",".join(quoted_pk)})
                 {"DO UPDATE SET " + update_clause if update_clause else "DO NOTHING"}
             """
 
@@ -169,14 +260,15 @@ def lambda_handler(event, context):
             if df.empty:
                 continue
 
-            pk = detect_pk(df)
+            pk = detect_pk(df, table_name)
 
             if pk is None:
                 raise Exception(f"No primary key found for metric {metric}")
 
+            ensure_correct_schema(engine, table_name, pk)
             create_table_if_not_exists(engine, table_name, df, pk)
 
-            df = df.drop_duplicates(subset=[pk])
+            df = df.drop_duplicates(subset=pk)
 
             batch_upsert(engine, df, table_name, pk)
 
